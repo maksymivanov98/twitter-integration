@@ -1,0 +1,25 @@
+.text-button {
+    background: none;
+    border: none;
+    color: red;
+    font-size: 0.75rem;
+    cursor: pointer;
+}
+
+.tweet-date {
+    color: gray;
+}
+
+.pagination {
+    padding: 10px 0;
+}
+
+.no-access-image {
+    width: 100%;
+    max-width: 300px;
+}
+
+.empty-image{
+    width: 100%;
+    max-width: 300px;
+}

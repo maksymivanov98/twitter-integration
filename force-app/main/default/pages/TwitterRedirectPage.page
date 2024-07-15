@@ -1,0 +1,53 @@
+<apex:page controller="TwitterRedirectController" action="{!redirectToContact}">
+    <apex:slds />
+    <style>
+        .slds-spinner_container {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            text-align: center;
+        }
+        .slds-spinner + p {
+            margin-top: 7rem;
+        }
+        .error-message {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            text-align: center;
+        }
+        .error-message p {
+            margin-top: 1rem;
+        	margin-bottom: 1rem;
+        }
+        .error-icon {
+            width: 300px;
+            height: 300px;
+            margin-bottom: 1rem;
+        }
+    </style>
+    <div class="slds-scope">
+        <apex:outputPanel rendered="{!isAuthorized}">
+            <div id="spinner" class="slds-spinner_container slds-is-relative">
+                <div role="status" class="slds-spinner slds-spinner--large slds-spinner--brand">
+                    <div class="slds-spinner__dot-a"></div>
+                    <div class="slds-spinner__dot-b"></div>
+                </div>
+                <p>Please wait, authorization is carried out and redirecting to the contact page...</p>
+            </div>
+        </apex:outputPanel>
+        <apex:outputPanel rendered="{!NOT(isAuthorized)}">
+            <div class="error-message">
+				<img src="{!URLFOR($Resource.Not_Authorized)}" alt="Not Authorized" class="error-icon" />
+                <p>Authorization failed. Please try again.</p>
+                <apex:form >
+                    <apex:commandButton value="Return to Home" action="{!redirectToHome}" styleClass="slds-button slds-button_brand"/>
+                </apex:form>
+            </div>
+        </apex:outputPanel>
+    </div>
+</apex:page>

@@ -1,0 +1,56 @@
+<template>
+    <lightning-card title="Create Tweet" icon-name="custom:custom11">
+
+        <template if:true={isCheckingAuthorization}>
+            <div class="slds-p-vertical_medium slds-text-align_center slds-m-around_large">
+                <div style="position:relative">
+                    <div class="slds-spinner_container">
+                        <div role="status" class="slds-spinner slds-spinner_medium slds-spinner_brand">
+                            <span class="slds-assistive-text">Loading...</span>
+                            <div class="slds-spinner__dot-a"></div>
+                            <div class="slds-spinner__dot-b"></div>
+                        </div>
+                    </div>
+                </div>
+                <p class="slds-p-top_medium slds-m-top_medium">{statusMessage}</p>
+            </div>
+        </template>
+
+        <template if:true={isUserAuthorized}>
+            <div class="user-info slds-p-around_medium">
+                <p class="user-name"><strong>{name}</strong></p>
+                <p class="user-username">
+                    <a href="javascript:void(0);" onclick={handleUserClick}>
+                        @{username}
+                    </a>
+                </p>
+            </div>
+            <div class="slds-p-around_medium">
+                <lightning-textarea label="Tweet Text" value={tweetText} onchange={handleTweetTextChange}></lightning-textarea>
+            </div>
+            <div class="slds-p-around_medium">
+                <label class="slds-form-element__label">Attach Image</label>
+                <div class="slds-form-element__control">
+                    <input type="file" multiple accept="image/*" onchange={handleFilesChange} class="slds-file-selector"/>
+                </div>
+            </div>
+            <div class="slds-p-around_medium slds-text-align_right">
+                <lightning-button variant="neutral" label="Cancel" onclick={handleCancel}></lightning-button>
+                <lightning-button variant="brand" label="Post" onclick={handlePost} class="slds-m-left_small"></lightning-button>
+            </div>
+        </template>
+
+        <template if:false={isCheckingAuthorization}>
+            <template if:false={isUserAuthorized}>
+                <div class="slds-text-align_center slds-p-vertical_medium">
+                    <div class="slds-text-align_center">
+                        <img src={noAccessImage} alt="User is not authorized" class="no-access-image"/>
+                    </div>
+                    <p class="slds-p-vertical_medium">{statusMessage}</p>
+                    <lightning-button label="Twitter log in" onclick={handleTwitterAuth}></lightning-button>
+                </div>
+            </template>
+        </template>
+
+    </lightning-card>
+</template>
