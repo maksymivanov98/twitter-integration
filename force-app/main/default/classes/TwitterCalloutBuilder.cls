@@ -26,7 +26,7 @@ public class TwitterCalloutBuilder {
         Map<String, String> params = new Map<String, String>();
         params.put('code', code);
         params.put('grant_type', 'authorization_code');
-        params.put('redirect_uri', 'https://companysandbox-29e-dev-ed.develop.lightning.force.com/apex/TwitterRedirectPage');
+        params.put('redirect_uri', twitterSetting.Redirect_Url__c);
         params.put('code_verifier', twitterSetting.Code_Challenge__c);
         params.put('code_challenge_method', 'plain');
         
@@ -111,7 +111,6 @@ public class TwitterCalloutBuilder {
     public TwitterCallout sendTweet(String accessToken, String tweetText, List<String> mediaTwitterIds) {
         Logger logger = Logger.getInstance();
         String endPoint = baseOrganizationEndpoint + '/2/tweets';
-        
         TwitterCallout callout = new TwitterCallout('POST', endPoint);
         
         callout.setHeader('Content-Type', 'application/json');
@@ -144,35 +143,6 @@ public class TwitterCalloutBuilder {
         return callout;
     }
     
-    public TwitterCallout uploadMedia(String imageBase64){
-        Logger logger = Logger.getInstance();
-        String endPoint = uploadMediaEndpoint + '/1.1/media/upload.json';
-        
-        TwitterCallout callout = new TwitterCallout('POST', endPoint);
-        
-        Map<String, String> headers = generateOAuth1Headers(endPoint, 'POST', new Map<String, String>{ 'media_data' => imageBase64 });
-        for (String key : headers.keySet()) {
-            callout.setHeader(key, headers.get(key));
-        }
-        callout.setBody('media_data=' + EncodingUtil.urlEncode(imageBase64, 'UTF-8'));
-        callout.send();
-        
-        if (callout.isSuccess()) { 
-            try { 
-                callout.responseObj = TwitterWrappers.parseUploadMediaResponse(callout.response.getBody());
-            } catch(Exception ex){
-                logger.error(callout.request, callout.response, 'TwitterCalloutBuilder', 'uploadMedia', ex.getMessage());
-                callout.responseObj = ex.getCause() + ex.getTypeName() + ex.getMessage() + ex.getLineNumber();
-            }
-        }else{
-            logger.error(callout.request, callout.response, 'TwitterCalloutBuilder', 'uploadMedia');
-        }
-        System.debug(callout.request.getEndpoint());
-        System.debug(callout.response.getBody());
-        logger.publish();
-        return callout;
-    }
-    
     public TwitterCallout deleteTweet(String tweetId, String accessToken) {
         Logger logger = Logger.getInstance();
         String endPoint = baseOrganizationEndpoint + '/2/tweets/' + tweetId;
@@ -198,50 +168,291 @@ public class TwitterCalloutBuilder {
         return callout;
     }
     
-    private String oauth1SignatureBaseString(String method, String url, Map<String, String> params) {
-        String sortedParams = oauth1SortedParams(params);
-        String baseString = method.toUpperCase() + '&' + EncodingUtil.urlEncode(url, 'UTF-8') + '&' + EncodingUtil.urlEncode(sortedParams, 'UTF-8');
-        return baseString;
-    }
-    
-    private String oauth1SortedParams(Map<String, String> params) {
-        List<String> keys = new List<String>(params.keySet());
-        keys.sort();
-        List<String> sortedParams = new List<String>();
-        for (String key : keys) {
-            sortedParams.add(EncodingUtil.urlEncode(key, 'UTF-8') + '=' + EncodingUtil.urlEncode(params.get(key), 'UTF-8'));
-        }
-        return String.join(sortedParams, '&');
-    }
-    
-    private String oauth1Sign(String baseString, String signingKey) {
-        Blob mac = Crypto.generateMac('HmacSHA1', Blob.valueOf(baseString), Blob.valueOf(signingKey));
-        return EncodingUtil.base64Encode(mac);
-    }
-    
-    private Map<String, String> generateOAuth1Headers(String url, String method, Map<String, String> params) {
+    public TwitterCallout uploadMedia(String imageBase64, String accessToken, String accessTokenSecret, String userId){
+        Logger logger = Logger.getInstance();
+        String endPoint = uploadMediaEndpoint + '/1.1/media/upload.json';
+        
+        TwitterCallout callout = new TwitterCallout('POST', endPoint);
+        
         Map<String, String> oauthParams = new Map<String, String>();
         oauthParams.put('oauth_consumer_key', twitterSetting.Consumer_Key__c);
-        oauthParams.put('oauth_nonce', 'DywblabChh4Oh0nR3iX675xWfOBaeJvO');
+        oauthParams.put('oauth_nonce', String.valueOf(Crypto.getRandomInteger()));
         oauthParams.put('oauth_signature_method', 'HMAC-SHA1');
         oauthParams.put('oauth_timestamp', String.valueOf(DateTime.now().getTime()/1000));
-        oauthParams.put('oauth_token', twitterSetting.Access_Token__c);
+        oauthParams.put('oauth_token', accessToken);
         oauthParams.put('oauth_version', '1.0');
         
-        Map<String, String> allParams = new Map<String, String>(params);
+        Map<String, String> allParams = new Map<String, String>();
+        allParams.put('media_data', imageBase64);
+        allParams.put('additional_owners', userId);
         allParams.putAll(oauthParams);
         
-        String baseString = oauth1SignatureBaseString(method, url, allParams);
-        String signingKey = EncodingUtil.urlEncode(twitterSetting.Consumer_Secret__c, 'UTF-8') + '&' + EncodingUtil.urlEncode(twitterSetting.Access_Token_Secret__c, 'UTF-8');
-        oauthParams.put('oauth_signature', oauth1Sign(baseString, signingKey));
+        String baseString = createBaseString(endPoint, 'POST', allParams);
         
-        Map<String, String> headers = new Map<String, String>();
-        List<String> headerStrings = new List<String>();
-        for (String key : oauthParams.keySet()) {
-            headerStrings.add(EncodingUtil.urlEncode(key, 'UTF-8') + '="' + EncodingUtil.urlEncode(oauthParams.get(key), 'UTF-8') + '"');
+        
+        oauthParams.put('oauth_signature', generateSignature(baseString, accessTokenSecret));
+        
+        callout.setHeader('Authorization', createAuthorizationHeader(oauthParams));
+        callout.setBody('media_data=' + EncodingUtil.urlEncode(imageBase64, 'UTF-8') + '&additional_owners=' + EncodingUtil.urlEncode(userId, 'UTF-8'));
+        callout.send();
+        
+        if (callout.isSuccess()) { 
+            try { 
+                callout.responseObj = TwitterWrappers.parseUploadMediaResponse(callout.response.getBody());
+            } catch(Exception ex){
+                logger.error(callout.request, callout.response, 'TwitterCalloutBuilder', 'uploadMedia', ex.getMessage());
+                callout.responseObj = ex.getCause() + ex.getTypeName() + ex.getMessage() + ex.getLineNumber();
+            }
+        }else{
+            logger.error(callout.request, callout.response, 'TwitterCalloutBuilder', 'uploadMedia');
         }
-        headers.put('Authorization', 'OAuth ' + String.join(headerStrings, ', '));
-        return headers;
+        System.debug(callout.request.getEndpoint());
+        System.debug(callout.response.getBody());
+        logger.publish();
+        return callout;
+    }
+    
+    public TwitterCallout initUploadVideo(String mediaType, Integer totalBytes, String accessToken, String accessTokenSecret) {
+        Logger logger = Logger.getInstance();
+        String endPoint = uploadMediaEndpoint + '/1.1/media/upload.json';
+        
+        TwitterCallout callout = new TwitterCallout('POST', endPoint);
+        
+        Map<String, String> oauthParams = new Map<String, String>();
+        oauthParams.put('oauth_consumer_key', twitterSetting.Consumer_Key__c);
+        oauthParams.put('oauth_nonce', String.valueOf(Crypto.getRandomInteger()));
+        oauthParams.put('oauth_signature_method', 'HMAC-SHA1');
+        oauthParams.put('oauth_timestamp', String.valueOf(DateTime.now().getTime()/1000));
+        oauthParams.put('oauth_token', accessToken);
+        oauthParams.put('oauth_version', '1.0');
+        
+        Map<String, String> allParams = new Map<String, String>();
+        allParams.put('command', 'INIT');
+        allParams.put('media_category', 'amplify_video');
+        allParams.put('total_bytes', String.valueOf(totalBytes));
+        allParams.putAll(oauthParams);
+        
+        String baseString = createBaseString(endPoint, 'POST', allParams);
+        
+        oauthParams.put('oauth_signature', generateSignature(baseString, accessTokenSecret));
+        
+        callout.setHeader('Authorization', createAuthorizationHeader(oauthParams));
+        callout.setBody('command=INIT&media_category=' + 'amplify_video' + '&total_bytes=' + String.valueOf(totalBytes));
+        callout.send();
+        
+        if (callout.isSuccess()) {
+            try {
+                callout.responseObj = TwitterWrappers.parseUploadMediaResponse(callout.response.getBody());
+                TwitterWrappers.UploadMediaResponse wrapper = (TwitterWrappers.UploadMediaResponse) callout.responseObj;
+            } catch(Exception ex) {
+                logger.error(callout.request, callout.response, 'TwitterCalloutBuilder', 'initUploadVideo', ex.getMessage());
+                callout.responseObj = ex.getCause() + ex.getTypeName() + ex.getMessage() + ex.getLineNumber();
+            }
+        } else {
+            logger.error(callout.request, callout.response, 'TwitterCalloutBuilder', 'initUploadVideo');
+        }
+        
+        System.debug(callout.request.getEndpoint());
+        System.debug(callout.response.getBody());
+        logger.publish();
+        return callout;
+    }
+    
+    public TwitterCallout appendUploadVideo(String mediaId, String videoChunk, Integer segmentIndex, String accessToken, String accessTokenSecret) {
+        Logger logger = Logger.getInstance();
+        String endPoint = uploadMediaEndpoint + '/1.1/media/upload.json';
+        
+        TwitterCallout callout = new TwitterCallout('POST', endPoint);
+        
+        Map<String, String> oauthParams = new Map<String, String>();
+        oauthParams.put('oauth_consumer_key', twitterSetting.Consumer_Key__c);
+        oauthParams.put('oauth_nonce', String.valueOf(Crypto.getRandomInteger()));
+        oauthParams.put('oauth_signature_method', 'HMAC-SHA1');
+        oauthParams.put('oauth_timestamp', String.valueOf(DateTime.now().getTime()/1000));
+        oauthParams.put('oauth_token', accessToken);
+        oauthParams.put('oauth_version', '1.0');
+        
+        Map<String, String> allParams = new Map<String, String>();
+        allParams.put('command', 'APPEND');
+        allParams.put('media_id', mediaId);
+        allParams.put('segment_index', String.valueOf(segmentIndex));
+        allParams.put('media_data', String.valueOf(videoChunk));
+        allParams.putAll(oauthParams);
+        
+        String baseString = createBaseString(endPoint, 'POST', allParams);
+        
+        oauthParams.put('oauth_signature', generateSignature(baseString, accessTokenSecret));
+        
+        callout.setHeader('Authorization', createAuthorizationHeader(oauthParams));
+        callout.setBody('command=APPEND&media_id=' + mediaId + '&segment_index=' + String.valueOf(segmentIndex) + '&media_data=' + EncodingUtil.urlEncode(videoChunk, 'UTF-8'));
+        callout.send();
+        
+        if (!callout.isSuccess()) {
+            logger.error(callout.request, callout.response, 'TwitterCalloutBuilder', 'appendUploadVideo');
+        }
+        
+        System.debug(callout.request.getEndpoint());
+        System.debug(callout.response.getBody());
+        logger.publish();
+        return callout;
+    }
+    
+    public TwitterCallout finalizeUploadVideo(String mediaId, String accessToken, String accessTokenSecret) {
+        Logger logger = Logger.getInstance();
+        String endPoint = uploadMediaEndpoint + '/1.1/media/upload.json';
+        
+        TwitterCallout callout = new TwitterCallout('POST', endPoint);
+        
+        Map<String, String> oauthParams = new Map<String, String>();
+        oauthParams.put('oauth_consumer_key', twitterSetting.Consumer_Key__c);
+        oauthParams.put('oauth_nonce', String.valueOf(Crypto.getRandomInteger()));
+        oauthParams.put('oauth_signature_method', 'HMAC-SHA1');
+        oauthParams.put('oauth_timestamp', String.valueOf(DateTime.now().getTime()/1000));
+        oauthParams.put('oauth_token', accessToken);
+        oauthParams.put('oauth_version', '1.0');
+        
+        Map<String, String> allParams = new Map<String, String>();
+        allParams.put('command', 'FINALIZE');
+        allParams.put('media_id', mediaId);
+        allParams.putAll(oauthParams);
+        
+        String baseString = createBaseString(endPoint, 'POST', allParams);
+        
+        oauthParams.put('oauth_signature', generateSignature(baseString, accessTokenSecret));
+        
+        callout.setHeader('Authorization', createAuthorizationHeader(oauthParams));
+        callout.setBody('command=FINALIZE&media_id=' + mediaId);
+        callout.send();
+        
+        if (callout.isSuccess()) {
+            try {
+                callout.responseObj = TwitterWrappers.parseUploadMediaResponse(callout.response.getBody());
+            } catch(Exception ex) {
+                logger.error(callout.request, callout.response, 'TwitterCalloutBuilder', 'finalizeUploadVideo', ex.getMessage());
+                callout.responseObj = ex.getCause() + ex.getTypeName() + ex.getMessage() + ex.getLineNumber();
+            }
+        } else {
+            logger.error(callout.request, callout.response, 'TwitterCalloutBuilder', 'finalizeUploadVideo');
+        }
+        
+        System.debug(callout.request.getEndpoint());
+        System.debug(callout.response.getBody());
+        logger.publish();
+        return callout;
+    }
+    
+    public TwitterCallout createTwitterAuthorizationURLOAuth1(String contactId){
+        Logger logger = Logger.getInstance();
+        String endPoint = baseOrganizationEndpoint + '/oauth/request_token';
+        
+        Map<String, String> params = new Map<String, String>();
+        params.put('oauth_callback', twitterSetting.Redirect_Url__c + '?state=' + contactId);
+        params.put('oauth_consumer_key', twitterSetting.Consumer_Key__c);
+        params.put('oauth_nonce', EncodingUtil.convertToHex(Crypto.generateDigest('SHA-256', Blob.valueOf(String.valueOf(Math.random())))));
+        params.put('oauth_signature_method', 'HMAC-SHA1');
+        params.put('oauth_timestamp', String.valueOf(DateTime.now().getTime() / 1000));
+        params.put('oauth_version', '1.0');
+        
+        String baseString = createBaseString(endPoint, 'POST', params);
+        String signature = generateSignature(baseString, null);
+        params.put('oauth_signature', signature);
+        
+        TwitterCallout callout = new TwitterCallout('POST', endPoint);
+        callout.setHeader('Authorization', createAuthorizationHeader(params));
+        callout.send();
+        
+        if (callout.isSuccess()) { 
+            try { 
+                callout.responseObj = callout.response.getBody();
+            } catch(Exception ex){
+                logger.error(callout.request, callout.response, 'TwitterCalloutBuilder', 'deleteTweet', ex.getMessage());
+                callout.responseObj = ex.getCause() + ex.getTypeName() + ex.getMessage() + ex.getLineNumber();
+            }
+        }else{
+            logger.error(callout.request, callout.response, 'TwitterCalloutBuilder', 'deleteTweet');
+        }
+        System.debug(callout.request.getEndpoint());
+        System.debug(callout.response.getBody());
+        logger.publish();
+        return callout;
+    }
+    
+    public TwitterCallout getAccessTokenOAuth1(String oauthToken, String oauthVerifier) {
+        Logger logger = Logger.getInstance();
+        String endPoint = baseOrganizationEndpoint + '/oauth/access_token';
+        
+        Map<String, String> params = new Map<String, String>();
+        params.put('oauth_token', oauthToken);
+        params.put('oauth_verifier', oauthVerifier);
+        params.put('oauth_consumer_key', twitterSetting.Consumer_Key__c);
+        params.put('oauth_nonce', EncodingUtil.convertToHex(Crypto.generateDigest('SHA-256', Blob.valueOf(String.valueOf(Math.random())))));
+        params.put('oauth_signature_method', 'HMAC-SHA1');
+        params.put('oauth_timestamp', String.valueOf(DateTime.now().getTime() / 1000));
+        params.put('oauth_version', '1.0');
+        
+        String baseString = createBaseString(endPoint, 'POST', params);
+        String signature = generateSignature(baseString, null);
+        params.put('oauth_signature', signature);
+        
+        TwitterCallout callout = new TwitterCallout('POST', endPoint);
+        callout.setHeader('Content-Type', 'application/x-www-form-urlencoded');
+        callout.setHeader('Authorization', createAuthorizationHeader(params));
+        callout.setBody('oauth_token=' + EncodingUtil.urlEncode(oauthToken, 'UTF-8') + '&oauth_verifier=' + EncodingUtil.urlEncode(oauthVerifier, 'UTF-8'));
+        callout.send();
+        if (callout.isSuccess()) { 
+            try { 
+                Map<String, String> responseMap = new Map<String, String>();
+                for (String param : callout.response.getBody().split('&')) {
+                    List<String> keyValue = param.split('=');
+                    if (keyValue.size() == 2) {
+                        responseMap.put(keyValue[0], keyValue[1]);
+                    }
+                }
+                TwitterWrappers wrapper = new TwitterWrappers();
+                wrapper.oauth_token = responseMap.get('oauth_token');
+                wrapper.oauth_token_secret = responseMap.get('oauth_token_secret');
+                wrapper.user_id = responseMap.get('user_id');
+                callout.responseObj = wrapper;     
+            } catch(Exception ex){
+                logger.error(callout.request, callout.response, 'TwitterCalloutBuilder', 'getAccessToken', ex.getMessage());
+                callout.responseObj = ex.getCause() + ex.getTypeName() + ex.getMessage() + ex.getLineNumber();
+            }
+        }else{
+            logger.error(callout.request, callout.response, 'TwitterCalloutBuilder', 'getAccessToken');
+        }
+        System.debug(callout.request.getEndpoint());
+        System.debug(callout.response.getBody());
+        logger.publish();
+        return callout;
+    }
+    
+    private String createBaseString(String url, String method, Map<String, String> params) {
+        List<String> sortedKeys = new List<String>(params.keySet());
+        sortedKeys.sort();
+        
+        List<String> parameterString = new List<String>();
+        for (String key : sortedKeys) {
+            parameterString.add(EncodingUtil.urlEncode(key, 'UTF-8') + '=' + EncodingUtil.urlEncode(params.get(key), 'UTF-8'));
+        }
+        
+        String paramString = String.join(parameterString, '&');
+        return method + '&' + EncodingUtil.urlEncode(url, 'UTF-8') + '&' + EncodingUtil.urlEncode(paramString, 'UTF-8');
+    }
+    
+    private String generateSignature(String baseString, String tokenSecret) {
+        tokenSecret = (tokenSecret == null) ? '' : tokenSecret;
+        String signingKey = EncodingUtil.urlEncode(twitterSetting.Consumer_Secret__c, 'UTF-8') + '&' + EncodingUtil.urlEncode(tokenSecret, 'UTF-8');
+        Blob signature = Crypto.generateMac('HMACSHA1', Blob.valueOf(baseString), Blob.valueOf(signingKey));
+        return EncodingUtil.base64Encode(signature);
+    }
+    
+    private String createAuthorizationHeader(Map<String, String> params) {
+        List<String> headerParams = new List<String>();
+        for (String key : params.keySet()) {
+            headerParams.add(key + '="' + EncodingUtil.urlEncode(params.get(key), 'UTF-8') + '"');
+        }
+        
+        return 'OAuth ' + String.join(headerParams, ', ');
     }
     
     public class TwitterCalloutBuilderException extends Exception {}

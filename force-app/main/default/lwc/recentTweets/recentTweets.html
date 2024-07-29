@@ -1,70 +1,108 @@
 <template>
     <lightning-card title="Recent Tweets">
-        <template if:true={isCheckingAuthorization}>
-            <div class="slds-p-vertical_medium slds-text-align_center slds-m-around_large">
-                <div style="position:relative">
-                    <div class="slds-spinner_container">
-                        <div role="status" class="slds-spinner slds-spinner_medium slds-spinner_brand">
-                            <span class="slds-assistive-text">Loading...</span>
-                            <div class="slds-spinner__dot-a"></div>
-                            <div class="slds-spinner__dot-b"></div>
-                        </div>
-                    </div>
-                </div>
-                <p class="slds-p-top_medium slds-m-top_medium">{statusMessage}</p>
-            </div>
-        </template>
-        <template if:true={isUserAuthorized}>
-            <template if:true={tweets.length}>
-                <template for:each={tweets} for:item="tweet">
-                    <div key={tweet.Tweet_ID__c} class="tweet slds-box slds-p-around_medium slds-m-around_medium">
-                        <div class="tweet-header slds-grid slds-grid_align-spread">
-                            <div class="tweet-date slds-text-color_weak">{tweet.formattedDate}</div>
-                            <div class="tweet-actions">
-                                <button class="text-button" data-id={tweet.Tweet_ID__c} onclick={handleDelete}>Delete</button>
+        <div slot="actions">
+            <template if:true={isUserAuthorized}>
+                <lightning-button-menu alternative-text="Show menu" variant="border-filled" icon-name="utility:settings" menu-alignment="right">
+                    <lightning-menu-item value="Twitter log in" label="Twitter log in" onclick={handleTwitterAuth}></lightning-menu-item>
+                </lightning-button-menu>
+            </template>
+        </div>
+        <div class="slds-is-relative">
+            <template if:true={isDeletingTweet}>
+                <lightning-spinner variant="brand" size="medium"></lightning-spinner>
+            </template>
+            <template if:true={isCheckingAuthorization}>
+                <div class="slds-p-vertical_medium slds-text-align_center slds-m-around_large">
+                    <div style="position:relative">
+                        <div class="slds-spinner_container">
+                            <div role="status" class="slds-spinner slds-spinner_medium slds-spinner_brand">
+                                <span class="slds-assistive-text">Loading...</span>
+                                <div class="slds-spinner__dot-a"></div>
+                                <div class="slds-spinner__dot-b"></div>
                             </div>
                         </div>
-                        <p>{tweet.Tweet_Text__c}</p>
                     </div>
-                </template>
-                <div class="pagination slds-grid slds-grid_align-spread">
-                    <lightning-button 
-                        label="Previous" 
-                        onclick={handlePrevious} 
-                        disabled={disablePrevious}
-                        variant="neutral"
-                        class="slds-button_outline-brand slds-p-horizontal_medium"
-                    ></lightning-button>
-                    <lightning-button 
-                        label="Next" 
-                        onclick={handleNext} 
-                        disabled={disableNext}
-                        variant="neutral"
-                        class="slds-button_outline-brand slds-p-horizontal_medium"
-                    ></lightning-button>
+                    <p class="slds-p-top_medium slds-m-top_medium">{statusMessage}</p>
                 </div>
             </template>
-
-            <template if:true={isTweetsLoaded}>
-                <template if:false={tweets.length}>
-                    <div class="slds-text-align_center">
-                        <img src={emptyImage} alt="No tweets found" class="empty-image"/>
-                        <p>No tweets found</p>
+            <template if:true={isUserAuthorized}>
+                <template if:true={tweets.length}>
+                    <p class="slds-p-horizontal_medium">Total Tweets: {totalTweets}</p>
+                    <template for:each={tweets} for:item="tweet">
+                        <div key={tweet.Tweet_ID__c} class="tweet slds-box slds-p-around_medium slds-m-around_medium">
+                            <div class="tweet-header slds-grid slds-grid_align-spread">
+                                <div class="tweet-date slds-text-color_weak">{tweet.formattedDate}</div>
+                                <div class="tweet-actions">
+                                    <lightning-button-menu alternative-text="Show actions" variant="border-filled" icon-size="x-small" menu-alignment="right" icon-name="utility:down">
+                                        <lightning-menu-item label="Go to Tweet(SF)" value="goToTweetSF" data-id={tweet.Id} onclick={redirectToTweetSalesforce}></lightning-menu-item>
+                                        <lightning-menu-item label="Go to Tweet(Tw)" value="goToTweetTw" data-id={tweet.Tweet_ID__c} onclick={redirectToTweetTwitter}></lightning-menu-item>
+                                        <lightning-menu-item label="Delete" value="deleteTweet" data-id={tweet.Tweet_ID__c} onclick={showDeleteConfirmation}></lightning-menu-item>
+                                    </lightning-button-menu>
+                                </div>
+                            </div>
+                            <p>{tweet.Tweet_Text__c}</p>
+                        </div>
+                    </template>
+                    <div class="button-pagination slds-grid slds-grid_align-spread">
+                        <lightning-button 
+                            label="Previous" 
+                            onclick={handlePrevious} 
+                            disabled={disablePrevious}
+                            variant="neutral"
+                            class="slds-button_outline-brand slds-p-horizontal_medium"
+                        ></lightning-button>
+                        <lightning-button 
+                            label="Next" 
+                            onclick={handleNext} 
+                            disabled={disableNext}
+                            variant="neutral"
+                            class="slds-button_outline-brand slds-p-horizontal_medium"
+                        ></lightning-button>
                     </div>
+                </template>
+                <template if:true={isTweetsLoaded}>
+                    <template if:false={tweets.length}>
+                        <div class="slds-text-align_center">
+                            <img src={emptyImage} alt="No tweets found" class="empty-image"/>
+                            <p>No tweets found</p>
+                        </div>
+                    </template>
                 </template>
             </template>
-
-        </template>
-        <template if:false={isUserAuthorized}>
-            <div class="slds-text-align_center slds-p-vertical_medium">
-                <template if:false={isCheckingAuthorization}>
-                    <div class="slds-text-align_center">
-                        <img src={noAccessImage} alt="User is not authorized" class="no-access-image"/>
-                    </div>
-                    <p class="slds-p-vertical_medium">{statusMessage}</p>
-                    <lightning-button label="Twitter log in" onclick={handleTwitterAuth}></lightning-button>
-                </template>
-            </div>
-        </template>
+            <template if:false={isUserAuthorized}>
+                <div class="slds-text-align_center slds-p-vertical_medium">
+                    <template if:false={isCheckingAuthorization}>
+                        <div class="slds-text-align_center">
+                            <img src={noAccessImage} alt="User is not authorized" class="no-access-image"/>
+                        </div>
+                        <p class="slds-p-vertical_medium">{statusMessage}</p>
+                        <lightning-button label="Twitter log in" onclick={handleTwitterAuth}></lightning-button>
+                    </template>
+                </div>
+            </template>
+        </div>
     </lightning-card>
+    <template if:true={ShowDeleteModal}>
+            <section role="dialog" tabindex="-1" class="slds-modal slds-fade-in-open">
+                <div class="slds-modal__container">
+                    <header class="slds-modal__header">
+                        <button class="slds-button slds-button_icon slds-modal__close slds-button_icon-inverse" title="Close" onclick={closeModal}>
+                            <lightning-icon icon-name="utility:close" alternative-text="close" size="small"></lightning-icon>
+                            <span class="slds-assistive-text">Close</span>
+                        </button>
+                        <h2 class="slds-text-heading_medium">Delete Tweet</h2>
+                    </header>
+                    <div class="slds-modal__content slds-p-around_medium">
+                        <p>Are you sure you want to delete this tweet?</p>
+                    </div>
+                    <footer class="slds-modal__footer">
+                        <div class="slds-align_absolute-center">
+                            <lightning-button class="slds-p-horizontal_xx-small" variant="neutral" label="Cancel" onclick={closeModal}></lightning-button>
+                            <lightning-button class="slds-p-horizontal_xx-small" variant="brand" label="Delete" onclick={confirmDelete}></lightning-button>
+                        </div>
+                    </footer>
+                </div>
+            </section>
+            <div class="slds-backdrop slds-backdrop_open"></div>
+    </template>
 </template>

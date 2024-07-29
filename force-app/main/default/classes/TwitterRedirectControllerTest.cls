@@ -38,7 +38,7 @@ public class TwitterRedirectControllerTest {
         
         System.assertEquals('/home/home.jsp', resultPage.getUrl());
     }
-    
+     
     @isTest 
     static void errorHandlingTest() {
         PageReference pageRef = Page.TwitterRedirectPage;

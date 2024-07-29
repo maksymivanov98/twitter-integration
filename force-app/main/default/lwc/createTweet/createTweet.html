@@ -1,6 +1,5 @@
 <template>
-    <lightning-card title="Create Tweet" icon-name="custom:custom11">
-
+    <div class="slds-is-relative">
         <template if:true={isCheckingAuthorization}>
             <div class="slds-p-vertical_medium slds-text-align_center slds-m-around_large">
                 <div style="position:relative">
@@ -15,31 +14,9 @@
                 <p class="slds-p-top_medium slds-m-top_medium">{statusMessage}</p>
             </div>
         </template>
-
-        <template if:true={isUserAuthorized}>
-            <div class="user-info slds-p-around_medium">
-                <p class="user-name"><strong>{name}</strong></p>
-                <p class="user-username">
-                    <a href="javascript:void(0);" onclick={handleUserClick}>
-                        @{username}
-                    </a>
-                </p>
-            </div>
-            <div class="slds-p-around_medium">
-                <lightning-textarea label="Tweet Text" value={tweetText} onchange={handleTweetTextChange}></lightning-textarea>
-            </div>
-            <div class="slds-p-around_medium">
-                <label class="slds-form-element__label">Attach Image</label>
-                <div class="slds-form-element__control">
-                    <input type="file" multiple accept="image/*" onchange={handleFilesChange} class="slds-file-selector"/>
-                </div>
-            </div>
-            <div class="slds-p-around_medium slds-text-align_right">
-                <lightning-button variant="neutral" label="Cancel" onclick={handleCancel}></lightning-button>
-                <lightning-button variant="brand" label="Post" onclick={handlePost} class="slds-m-left_small"></lightning-button>
-            </div>
+        <template if:true={isSendingTweet}>
+            <lightning-spinner variant="brand" size="medium"></lightning-spinner>
         </template>
-
         <template if:false={isCheckingAuthorization}>
             <template if:false={isUserAuthorized}>
                 <div class="slds-text-align_center slds-p-vertical_medium">
@@ -51,6 +28,87 @@
                 </div>
             </template>
         </template>
+        <template if:true={isUserAuthorized}>
+            <lightning-modal-header label="Create Tweet">
+            </lightning-modal-header>
+            <lightning-modal-body>
+                <div class="user-info slds-p-horizontal_x-small slds-p-vertical_medium">
+                    <p class="user-name">
+                        <strong>{userData.name}</strong>
+                        <template if:true={isUserAuthorized}>
+                            <lightning-button-menu class="slds-float_right" alternative-text="Show menu" variant="border-filled" icon-name="utility:settings" menu-alignment="right">
+                                <lightning-menu-item value="Twitter log in" label="Twitter log in" onclick={handleTwitterAuth}></lightning-menu-item>
+                            </lightning-button-menu>
+                        </template>
+                    </p>
+                    <p class="user-username">
+                        <a href="javascript:void(0);" onclick={handleUserClick}>
+                            @{userData.username}
+                        </a>
+                    </p>
+                </div>
+                <div class="slds-p-horizontal_x-small">
+                    <lightning-textarea class="tweet-text" label="Tweet Text" value={tweetText} onchange={handleTweetTextChange} maxlength="250"></lightning-textarea>
+                </div>
+                <template if:true={isUserAuthorizedOAuth1}>
+                    <div class="slds-p-horizontal_x-small">
+                        <template if:true={hasVideoFiles}>
+                            <div class="slds-theme_warning slds-p-around_xx-small custom-warning">
+                                <div class="slds-grid slds-align_absolute-center">
+                                    <div class="slds-col slds-size_auto slds-p-right_xx-small">
+                                        <lightning-icon icon-name="utility:warning" alternative-text="Warning" size="x-small"></lightning-icon>
+                                    </div>
+                                    <div class="slds-col slds-size_1-of-1">
+                                        <p class="slds-text-body_small slds-m-bottom_none">Due to the presence of video files, tweeting may take longer.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </template>
+                        <template for:each={uploadedFiles} for:item="file" for:index="index">
+                            <li key={file.name} class="file-item slds-p-around_x-small">
+                                <span class="file-name">
+                                    <div class="slds-grid slds-gutters">
+                                        <div class="slds-col slds-size_1-of-3">
+                                            <span>{file.name}  </span>
+                                        </div>
+                                        <div class="slds-col slds-size_1-of-3">
+                                            <span>
+                                                <template if:true={file.isVideo}>
+                                                    <lightning-helptext class="slds-align_absolute-center slds-p-left_small" icon-name="utility:warning" content="Will not be added as an Attachment"></lightning-helptext>
+                                                </template>
+                                            </span>
+                                        </div>
+                                    </div>
+                                </span>
+                                <button class="remove-button" title="Remove" onclick={removeFile} data-index={index}>
+                                    <lightning-icon icon-name="utility:close" alternative-text="Remove" size="x-small"></lightning-icon>
+                                </button>
+                            </li>                            
+                        </template>                
+                    </div>
+                    <template if:false={uploadedFiles.length}>
+                        <div class="slds-p-top_x-small"></div>
+                    </template>
+                    <div class="slds-p-horizontal_x-small">
+                        <c-file-upload remaining-files-count={remainingFileSlots} max-files={maxFiles} accepted-file-types="image/png, image/jpeg, video/mp4" onfileupload={handleFileUpload}></c-file-upload>
+                    </div>
+                </template>
+                <template if:false={isUserAuthorizedOAuth1}>
+                    <div class="slds-text-align_center slds-p-horizontal_x-small slds-p-vertical_x-small">
+                        <div class="file-upload-wrapper slds-p-vertical_x-small" >
+                            <p class="slds-p-vertical_x-small">You must be logged in to upload media files</p>
+                            <lightning-button class="slds-p-vertical_x-small" label="Twitter log in" onclick={handleTwitterAuthOAuth1}></lightning-button>
+                        </div>
+                    </div>
+                </template>
 
-    </lightning-card>
+            </lightning-modal-body>
+            <lightning-modal-footer>
+                <div class="slds-align_absolute-center">
+                    <lightning-button class="slds-p-horizontal_xx-small" variant="neutral" label="Cancel" onclick={handleCancel}></lightning-button>
+                    <lightning-button class="slds-p-horizontal_xx-small" variant="brand" label="Post" onclick={handlePost}></lightning-button>
+                </div>
+            </lightning-modal-footer>
+        </template>
+    </div>
 </template>

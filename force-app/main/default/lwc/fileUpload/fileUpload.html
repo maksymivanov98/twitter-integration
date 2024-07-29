@@ -1,0 +1,11 @@
+<template>
+    <div class="file-upload-wrapper" ondragover={handleDragOver} ondragleave={handleDragLeave} ondrop={handleDrop}>
+        <input onclick={handleDragZoneClick} type="file" id="file-input" class="file-input" multiple accept={acceptedFileTypes} onchange={handleChange} />
+        <label for="file-input" class="file-label">
+            <div class="drop-zone">
+                <lightning-button label="Upload Files" onclick={handleUploadClick}></lightning-button>
+                <p class="slds-p-top_x-small">Or drop files</p>
+            </div>
+        </label>
+    </div>
+</template>

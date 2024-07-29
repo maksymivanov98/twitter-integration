@@ -9,7 +9,7 @@ public class RecentTweetsControllerTest {
         insert contact;
         return contact;
     }
-    
+     
     public static void createTweet(Id contactId){
         Tweet__c tweet = new Tweet__c();
         tweet.Tweet_ID__c = '123';

@@ -27,7 +27,9 @@ public class Twitter_API_MultiMock implements HttpCalloutMock {
         public String regexCheckExpression;
         public String httpMethod;
         
-        public virtual Boolean isCompatible(HTTPRequest request) {         
+        public virtual Boolean isCompatible(HTTPRequest request) {
+            System.debug(request.getMethod() + ' | ' + this.httpMethod);
+            System.debug(request.getEndpoint() + ' | ' + regexCheckExpression);
             return request.getMethod() == this.httpMethod && request.getEndpoint().contains(regexCheckExpression);
         }
         
@@ -52,6 +54,24 @@ public class Twitter_API_MultiMock implements HttpCalloutMock {
             regexCheckExpression = '/2/oauth2/token';
             httpMethod = 'POST';
             responseBody = '{"token_type":"bearer","expires_in":7200,"access_token":"dE1nM0FDdlZKcWRIRDFnZWRCM1RFTnliMzJtdjFpMGExMlczY0c3WnN0MGdwOjE3MjA1MjE2MDA5NjE6MTowOmF0OjE","scope":"tweet.write users.read tweet.read offline.access","refresh_token":"VFhvX05leFZXOHJCNVQ0RnVsNjRTYnp1X3JzSHA3MWp6Ty1SVnA3cXpuZG9wOjE3MjA1MjE2MDA5NjE6MToxOnJ0OjE"}';
+        }
+    }
+    
+    public class getRequestTokenOAuth1Success extends CalloutMock {
+        {
+            statusCode = 200;
+            regexCheckExpression = 'https://api.twitter.com/oauth/request_token';
+            httpMethod = 'POST';
+            responseBody = 'oauth_token=123&oauth_token_secret=123';
+        }
+    }
+    
+    public class getAccessTokenOAuth1Success extends CalloutMock {
+        {
+            statusCode = 200;
+            regexCheckExpression = 'https://api.twitter.com/oauth/access_token';
+            httpMethod = 'POST';
+            responseBody = 'oauth_token=123&oauth_token_secret=123';
         }
     }
     

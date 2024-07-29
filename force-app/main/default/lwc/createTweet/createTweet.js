@@ -1,25 +1,38 @@
-import { LightningElement, api, track } from 'lwc';
+import { LightningElement, api, track, wire } from 'lwc';
 import { ShowToastEvent } from 'lightning/platformShowToastEvent';
 import { CloseActionScreenEvent } from 'lightning/actions';
+import { publish, MessageContext} from 'lightning/messageService';
+import msgService from '@salesforce/messageChannel/tweetMessageChannel__c';
 import createTwitterAuthorizationURL from '@salesforce/apex/CreateTweetController.createTwitterAuthorizationURL';
+import createTwitterAuthorizationURLOAuth1 from '@salesforce/apex/CreateTweetController.createTwitterAuthorizationURLOAuth1';
 import sendTweet from '@salesforce/apex/CreateTweetController.sendTweet';
 import isAccessTokenValid from '@salesforce/apex/CreateTweetController.isAccessTokenValid';
+import isAccessTokenOAuth1Valid from '@salesforce/apex/CreateTweetController.isAccessTokenOAuth1Valid';
 import uploadMedia from '@salesforce/apex/CreateTweetController.uploadMedia';
+import createAttachmentToTweet from '@salesforce/apex/CreateTweetController.createAttachmentToTweet';
+import initUploadVideo from '@salesforce/apex/CreateTweetController.initUploadVideo';
+import appendUploadVideo from '@salesforce/apex/CreateTweetController.appendUploadVideo';
+import finalizeUploadVideo from '@salesforce/apex/CreateTweetController.finalizeUploadVideo';
 import noAccessImage from '@salesforce/resourceUrl/No_Access_Image';
 
 export default class CreateTweet extends LightningElement {
     noAccessImage = noAccessImage;
     @track tweetText = '';
-    @track name = '';
-    @track username = '';
+    @track userData = {name:'', username:''};
     @track isUserAuthorized = false;
+    @track isUserAuthorizedOAuth1 = false;
     @track statusMessage = '';
     @track isCheckingAuthorization = false;
     @track mediaFiles = [];
-    @track mediaId = null;
-    @track fileName = '';
-    @track errorMessage = '';
+    @track hasVideoFiles = false;
+    @track isSendingTweet = false;
+    @track uploadedFiles = [];
+    @track maxFiles = 4;
+    @track remainingFilesCount = 4;
     _recordId;
+
+    @wire(MessageContext)
+    messageContext
 
     @api
     get recordId() {
@@ -30,6 +43,7 @@ export default class CreateTweet extends LightningElement {
         this._recordId = value;
         if (value) {
             this.isAccessTokenValid();
+            this.isAccessTokenOAuth1Valid();
         }
     }
 
@@ -42,17 +56,30 @@ export default class CreateTweet extends LightningElement {
                 this.isCheckingAuthorization = false;
                 this.isUserAuthorized = result.isSuccess;
                 if(result.isSuccess){
-                    this.name = result.responseObj.name;
-                    this.username = result.responseObj.username;
+                    this.userData.name = result.responseObj.name;
+                    this.userData.username = result.responseObj.username;
                 }else{
                     this.statusMessage = result.message;
                 }
-                console.log(JSON.stringify(result.responseObj));
             })
             .catch(error => {
                 this.isCheckingAuthorization = false;
-                this.errorMessage = error.body.message;
                 this.isUserAuthorized = false;
+                console.log(error.body.message);
+            });
+    }
+
+    isAccessTokenOAuth1Valid() {
+        isAccessTokenOAuth1Valid({ contactId: this.recordId })
+            .then(result => {
+                if(result.isSuccess){
+                    this.isUserAuthorizedOAuth1 = true;
+                }else{
+                    this.isUserAuthorizedOAuth1 = false;
+                }
+            })
+            .catch(error => {
+                console.log(error.body.message);
             });
     }
 
@@ -60,12 +87,18 @@ export default class CreateTweet extends LightningElement {
         this.tweetText = event.target.value;
     }
 
-    handleFilesChange(event) {
-        this.mediaFiles = event.target.files;
-    }
-
     handleTwitterAuth() {
         createTwitterAuthorizationURL({ contactId: this.recordId })
+            .then(result => {
+                this.redirectToLoginPage(result);
+            })
+            .catch(error => {
+                this.showToast('Error', 'An error occurred during Twitter authorization: ' + error.message, 'error');
+            });
+    }
+
+    handleTwitterAuthOAuth1(){
+        createTwitterAuthorizationURLOAuth1({ contactId: this.recordId })
             .then(result => {
                 this.redirectToLoginPage(result);
             })
@@ -79,61 +112,156 @@ export default class CreateTweet extends LightningElement {
     }
 
     handlePost() {
-        const promises = [];
+        this.isSendingTweet = true;
+        this.statusMessage = 'Sending a tweet...';
+
         const mediaTwitterIds = [];
         const mediaDetails = [];
-
-        for (let i = 0; i < this.mediaFiles.length; i++) {
-            const file = this.mediaFiles[i];
-            promises.push(this.readFileAsBase64(file).then(base64 => {
-                return uploadMedia({
-                    mediaBase64: base64,
-                    mediaName: file.name,
-                    mediaType: file.type,
-                    contactId: this.recordId
-                }).then(result => {
-                    if (result.isSuccess) {
-                        mediaTwitterIds.push(result.responseObj.media_id_string);
+        const videoFiles = this.mediaFiles.filter(file => file.type.startsWith('video/'));
+        const uploadPromises = this.mediaFiles.map(file => this.uploadMediaByType(file)
+            .then(result => {
+                if (result.isSuccess) {
+                    mediaTwitterIds.push(result.responseObj.media_id_string);
+                    if (!file.type.startsWith('video/')) {
                         mediaDetails.push({
                             name: file.name,
                             type: file.type,
-                            base64: base64
+                            mediaBase64: result.responseObj.mediaBase64
                         });
                     }
-                });
-            }));
-        }
+                }
+            })
+        );
 
-        Promise.all(promises)
-            .then(() => {
-                const mediaTwitterIdsJSON = JSON.stringify(mediaTwitterIds);
-                const mediaDetailsJSON = JSON.stringify(mediaDetails);
-                return sendTweet({ contactId: this.recordId, tweetText: this.tweetText, mediaTwitterIdsJSON: mediaTwitterIdsJSON, mediaDetailsJSON: mediaDetailsJSON });
-            })
-            .then(() => {
-                this.showToast('Success', 'Tweet posted successfully!', 'success');
-                this.dispatchEvent(new CloseActionScreenEvent());
-            })
-            .catch(error => {
-                this.showToast('Error', 'An error occurred while posting the tweet: ' + error.message, 'error');
+        Promise.all(uploadPromises)
+        .then(() => {
+            if (videoFiles.length > 0) {
+                const largestVideoSizeMB = Math.max(...videoFiles.map(file => file.size / (1024 * 1024)));
+                const delayTime = Math.max(largestVideoSizeMB / 2, 5) * 1000;
+                console.log(delayTime);
+                return this.delay(delayTime);
+            }
+            return Promise.resolve();
+        })
+        .then(() => sendTweet({
+            contactId: this.recordId,
+            tweetText: this.tweetText,
+            mediaTwitterIdsJSON: JSON.stringify(mediaTwitterIds)
+        }))
+        .then(result => {
+            if (result.isSuccess) {
+                const createAttachmentPromises = mediaDetails.map(detail => {
+                    return createAttachmentToTweet({
+                        tweetId: result.responseObj,
+                        mediaDetailsJSON: JSON.stringify(detail)
+                    });
+                });
+                
+                return Promise.all(createAttachmentPromises);
+            } else {
+                throw new Error(result.message);
+            }
+        })
+        .then(() => {
+            this.showToast('Success', 'Tweet posted successfully!', 'success');
+            this.isSendingTweet = false;
+            const msgMessage = {message:'Success'};
+            publish(this.messageContext, msgService, msgMessage);
+            this.dispatchEvent(new CloseActionScreenEvent());
+        })
+        .catch(error => {
+            this.showToast('Error', `An error occurred while posting the tweet: ${error.message}`, 'error');
+            this.isSendingTweet = false;
+        });
+    }
+
+    uploadMediaByType(file) {
+        if (file.type.startsWith('image/')) {
+            return this.uploadImage(file);
+        } else if (file.type.startsWith('video/')) {
+            return this.uploadVideo(file);
+        }
+    }
+
+    async uploadImage(file) {
+        try {
+            const base64 = await this.readFileAsBase64(file);
+            const uploadImageResponse = await uploadMedia({
+                mediaBase64: base64,
+                mediaName: file.name,
+                mediaType: file.type,
+                contactId: this.recordId
             });
+
+            if (!uploadImageResponse.isSuccess) {
+                throw new Error('Failed to upload image');
+            }
+
+            uploadImageResponse.responseObj.mediaBase64 = base64;
+            return uploadImageResponse;
+
+        } catch (error) {
+            return { isSuccess: false, message: error.message };
+        }
+    }
+
+    async uploadVideo(file) {
+        try {
+            if (!file || !file.size) {
+                throw new Error('Invalid file object');
+            }
+
+            const initResponse = await initUploadVideo({ mediaType: file.type, totalBytes: file.size, contactId: this.recordId });
+            if (!initResponse.isSuccess) {
+                throw new Error('Failed to initialize video upload');
+            }
+
+            const mediaId = initResponse.responseObj.media_id_string;
+            const chunkSize = 2.5 * 1024 * 1024;
+            let segmentIndex = 0;
+
+            for (let start = 0; start < file.size; start += chunkSize) {
+                const chunk = file.slice(start, start + chunkSize);
+                const base64Chunk = await this.readFileAsBase64(chunk);
+                const appendResponse = await appendUploadVideo({ mediaId, videoChunk: base64Chunk, segmentIndex, contactId: this.recordId });
+
+                if (!appendResponse.isSuccess) {
+                    throw new Error('Failed to append video chunk');
+                }
+
+                segmentIndex++;
+            }
+
+            const finalizeResponse = await finalizeUploadVideo({ mediaId, contactId: this.recordId });
+            if (!finalizeResponse.isSuccess) {
+                throw new Error('Failed to finalize video upload');
+            }
+
+            return finalizeResponse;
+
+        } catch (error) {
+            return { isSuccess: false, message: error.message };
+        }
     }
 
     readFileAsBase64(file) {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
-            reader.onloadend = () => {
-                resolve(reader.result.split(',')[1]);
+            reader.onload = () => {
+                const base64 = reader.result.split(',')[1];
+                resolve(base64);
             };
-            reader.onerror = () => {
-                reject(reader.error);
-            };
+            reader.onerror = () => reject(new Error('Error reading file'));
             reader.readAsDataURL(file);
         });
     }
 
+    delay(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+    
     handleUserClick() {
-        const url = `https://x.com/${this.username}`;
+        const url = `https://x.com/${this.userData.username}`;
         window.open(url, '_blank');
     }
 
@@ -150,5 +278,43 @@ export default class CreateTweet extends LightningElement {
                 variant: variant
             })
         );
+    }
+
+    get remainingFileSlots() {
+        return this.remainingFilesCount - this.uploadedFiles.length;
+    }
+
+    handleFileUpload(event) {
+        const file = event.detail;
+        const isImage = file.type.startsWith('image/');
+        const isVideo = file.type.startsWith('video/');
+        const maxImageSize = 5 * 1024 * 1024;
+        const maxVideoSize = 50 * 1024 * 1024;
+    
+        if ((isImage && file.size > maxImageSize) || (isVideo && file.size > maxVideoSize)) {
+            const message = 'The maximum image size can be 5 MB. The maximum video size can be 50 MB';
+            this.showToast('Warning', message, 'warning');
+            return;
+        }
+    
+        file.isVideo = isVideo;
+        this.uploadedFiles = [...this.uploadedFiles, file];
+        this.processFiles([file]);
+    }
+    
+    processFiles(files) {
+        this.mediaFiles = [...this.mediaFiles, ...files];
+        this.checkForVideoFiles();
+    }
+
+    removeFile(event) {
+        const index = event.currentTarget.dataset.index;
+        this.uploadedFiles = this.uploadedFiles.filter((file, idx) => idx !== parseInt(index));
+        this.mediaFiles = this.mediaFiles.filter((file, idx) => idx !== parseInt(index));
+        this.checkForVideoFiles();
+    }
+
+    checkForVideoFiles() {
+        this.hasVideoFiles = this.mediaFiles.some(file => file.type.startsWith('video/'));
     }
 }

@@ -6,6 +6,10 @@ public class CreateTweetControllerTest {
         contact.FirstName = 'FirstName';
         contact.LastName = 'LastName';
         contact.Email = 'test@gmail.com';
+        contact.Twitter_Id__c = '1804082796924731392';
+        contact.Twitter_Access_Token_OAuth1__c = '123';
+        contact.Twitter_Refresh_Token_OAuth1__c = '123';
+        contact.Twitter_Access_Token_OAuth1_Refresh_Time__c = DateTime.now().addHours(-1);
         insert contact;
     }
     
@@ -79,7 +83,7 @@ public class CreateTweetControllerTest {
         Contact contact = [SELECT Id FROM Contact LIMIT 1];
         
         Test.startTest();
-        AuraResponse response = CreateTweetController.getUserData('1234567890', contact.Id);
+        AuraResponse response = CreateTweetController.getUserData('1234567890', '123', '123', contact.Id);
         Test.stopTest();
         
         contact = [SELECT Id, Twitter_Access_Token__c, Twitter_Refresh_Token__c, Twitter_Handle__c, Twitter_Name__c FROM Contact LIMIT 1];
@@ -100,7 +104,7 @@ public class CreateTweetControllerTest {
         Contact contact = [SELECT Id FROM Contact LIMIT 1];
         
         Test.startTest();
-        AuraResponse response = CreateTweetController.sendTweet(contact.Id, 'Test Text', '["1810649797235265536"]', '[{"name":"kitty-cat.png","type":"image/png","base64":"imagebody"}]');
+        AuraResponse response = CreateTweetController.sendTweet(contact.Id, 'Test Text', '["1810649797235265536"]');
         Test.stopTest();
         
         List<Tweet__c> tweetList = [SELECT Id, Tweet_Id__c, Tweet_Text__c FROM Tweet__c WHERE Tweet_Id__c = '1810649803254083689'];
@@ -108,6 +112,19 @@ public class CreateTweetControllerTest {
         System.assertEquals(true, response.isSuccess);
         System.assertEquals(1, tweetList.size());
         System.assertEquals('Test Text', tweetList.get(0).Tweet_text__c);
+    }
+    
+    @isTest
+    static void updateContactTwitterOAuth1DataTest_success() {
+        Contact contact = [SELECT Id FROM Contact LIMIT 1];
+        
+        Test.startTest();
+        CreateTweetController.updateContactTwitterOAuth1Data(contact.Id, '12345', '12345', '1804082796924731392');
+        Test.stopTest();
+        
+        contact = [SELECT Id, Twitter_Access_Token_OAuth1__c, Twitter_Refresh_Token_OAuth1__c FROM Contact LIMIT 1];
+        System.assertEquals('12345', contact.Twitter_Access_Token_OAuth1__c);
+        System.assertEquals('12345', contact.Twitter_Refresh_Token_OAuth1__c);
     }
     
     @isTest
@@ -127,7 +144,58 @@ public class CreateTweetControllerTest {
     }
     
     @isTest
+    static void initUploadVideoTest_success() {
+        Twitter_API_MultiMock multiMock = new  Twitter_API_MultiMock();
+        multiMock.mockList.add(new Twitter_API_MultiMock.uploadMediaSuccess());
+        Test.setMock(HttpCalloutMock.class, multiMock);
+        
+        Contact contact = [SELECT Id FROM Contact LIMIT 1];
+        
+        Test.startTest();
+        AuraResponse response = CreateTweetController.initUploadVideo('video/mp4', 1000, contact.Id);
+        Test.stopTest();
+        
+        System.assertEquals(true, response.isSuccess);
+        System.assertNotEquals(null, response.responseObj);
+    }
+    
+    @isTest
+    static void appendUploadVideoTest_success() {
+        Twitter_API_MultiMock multiMock = new  Twitter_API_MultiMock();
+        multiMock.mockList.add(new Twitter_API_MultiMock.uploadMediaSuccess());
+        Test.setMock(HttpCalloutMock.class, multiMock);
+        
+        Contact contact = [SELECT Id FROM Contact LIMIT 1];
+        
+        Test.startTest();
+        AuraResponse response = CreateTweetController.appendUploadVideo('123', 'videobody', 0, contact.Id);
+        Test.stopTest();
+        
+        System.assertEquals(true, response.isSuccess);
+    }
+    
+    @isTest
+    static void finalizeUploadVideoTest_success() {
+        Twitter_API_MultiMock multiMock = new  Twitter_API_MultiMock();
+        multiMock.mockList.add(new Twitter_API_MultiMock.uploadMediaSuccess());
+        Test.setMock(HttpCalloutMock.class, multiMock);
+        
+        Contact contact = [SELECT Id FROM Contact LIMIT 1];
+        
+        Test.startTest();
+        AuraResponse response = CreateTweetController.finalizeUploadVideo('123', contact.Id);
+        Test.stopTest();
+        
+        System.assertEquals(true, response.isSuccess);
+        System.assertNotEquals(null, response.responseObj);
+    }
+    
+    @isTest
     static void createTwitterAuthorizationURLTest() {
+        Twitter_API_MultiMock multiMock = new  Twitter_API_MultiMock();
+        multiMock.mockList.add(new Twitter_API_MultiMock.getAccessTokenOAuth1Success());
+        Test.setMock(HttpCalloutMock.class, multiMock);
+        
         Contact contact = [SELECT Id FROM Contact LIMIT 1];
         
         Test.startTest();
@@ -135,6 +203,36 @@ public class CreateTweetControllerTest {
         Test.stopTest();
         
         System.assertNotEquals(null, authorizationURL);
+    }
+    
+    @isTest
+    static void createTwitterAuthorizationURLOAuth1Test() {
+        Contact contact = [SELECT Id FROM Contact LIMIT 1];
+        
+        Twitter_API_MultiMock multiMock = new  Twitter_API_MultiMock();
+        multiMock.mockList.add(new Twitter_API_MultiMock.getRequestTokenOAuth1Success());
+        Test.setMock(HttpCalloutMock.class, multiMock);
+        
+        Test.startTest();
+        String authorizationURL = CreateTweetController.createTwitterAuthorizationURLOAuth1(contact.Id);
+        Test.stopTest();
+        
+        System.assertNotEquals(null, authorizationURL);
+    }
+    
+    @isTest
+    static void getAccessTokenOAuth1Test_success() {
+        Twitter_API_MultiMock multiMock = new  Twitter_API_MultiMock();
+        multiMock.mockList.add(new Twitter_API_MultiMock.getAccessTokenOAuth1Success());
+        Test.setMock(HttpCalloutMock.class, multiMock);
+        
+        Contact contact = [SELECT Id FROM Contact LIMIT 1];
+        
+        Test.startTest();
+        TwitterWrappers wrapper = CreateTweetController.getAccessTokenOAuth1('123', '123');
+        Test.stopTest();
+        
+        System.assertNotEquals(null, wrapper);
     }
     
     @isTest
@@ -256,7 +354,7 @@ public class CreateTweetControllerTest {
         Contact contact = [SELECT Id FROM Contact LIMIT 1];
         
         Test.startTest();
-        AuraResponse response = CreateTweetController.sendTweet(contact.Id, 'Test Text', '["1810649797235265536"]', '[{"name":"kitty-cat.png","type":"image/png","base64":"imagebody"}]');
+        AuraResponse response = CreateTweetController.sendTweet(contact.Id, 'Test Text', '["1810649797235265536"]');
         Test.stopTest();
         
         List<Tweet__c> tweetList = [SELECT Id, Tweet_Id__c, Tweet_Text__c FROM Tweet__c WHERE Tweet_Id__c = '1810649803254083689'];
