@@ -8,6 +8,7 @@ import createTwitterAuthorizationURLOAuth1 from '@salesforce/apex/CreateTweetCon
 import sendTweet from '@salesforce/apex/CreateTweetController.sendTweet';
 import isAccessTokenValid from '@salesforce/apex/CreateTweetController.isAccessTokenValid';
 import isAccessTokenOAuth1Valid from '@salesforce/apex/CreateTweetController.isAccessTokenOAuth1Valid';
+import logoutOfTwitter from '@salesforce/apex/CreateTweetController.logoutOfTwitter';
 import uploadMedia from '@salesforce/apex/CreateTweetController.uploadMedia';
 import createAttachmentToTweet from '@salesforce/apex/CreateTweetController.createAttachmentToTweet';
 import initUploadVideo from '@salesforce/apex/CreateTweetController.initUploadVideo';
@@ -107,6 +108,24 @@ export default class CreateTweet extends LightningElement {
             });
     }
 
+    handleLogoutOfTwitter(){
+        logoutOfTwitter({ contactId: this.recordId })
+        .then(result => {
+            if(result.isSuccess){
+                this.isUserAuthorized = false;
+                this.isUserAuthorizedOAuth1 = false;
+                const msgMessage = { message: 'authorization' };
+                publish(this.messageContext, msgService, msgMessage);
+                this.showToast('Success', 'Twitter logout successful', 'success');
+            }else{
+                this.showToast('Error', 'An error occurred during Twitter logout: ' + result.message, 'error');
+            }
+        })
+        .catch(error => {
+            this.showToast('Error', 'An error occurred during Twitter logout: ' + error.message, 'error');
+        });
+    }
+
     redirectToLoginPage(redirectUrl) {
         window.location.href = redirectUrl;
     }
@@ -114,7 +133,7 @@ export default class CreateTweet extends LightningElement {
     handlePost() {
         this.isSendingTweet = true;
         this.statusMessage = 'Sending a tweet...';
-
+    
         const mediaTwitterIds = [];
         const mediaDetails = [];
         const videoFiles = this.mediaFiles.filter(file => file.type.startsWith('video/'));
@@ -129,51 +148,66 @@ export default class CreateTweet extends LightningElement {
                             mediaBase64: result.responseObj.mediaBase64
                         });
                     }
+                } else {
+                    throw new Error(result.message);
                 }
             })
+            .catch(error => {
+                this.showToast('Error', `An error occurred while uploading media: ${error.message}`, 'error');
+                throw error;
+            })
         );
-
-        Promise.all(uploadPromises)
-        .then(() => {
-            if (videoFiles.length > 0) {
-                const largestVideoSizeMB = Math.max(...videoFiles.map(file => file.size / (1024 * 1024)));
-                const delayTime = Math.max(largestVideoSizeMB / 2, 5) * 1000;
-                console.log(delayTime);
-                return this.delay(delayTime);
-            }
-            return Promise.resolve();
-        })
-        .then(() => sendTweet({
-            contactId: this.recordId,
-            tweetText: this.tweetText,
-            mediaTwitterIdsJSON: JSON.stringify(mediaTwitterIds)
-        }))
-        .then(result => {
-            if (result.isSuccess) {
-                const createAttachmentPromises = mediaDetails.map(detail => {
-                    return createAttachmentToTweet({
-                        tweetId: result.responseObj,
-                        mediaDetailsJSON: JSON.stringify(detail)
+    
+        Promise.allSettled(uploadPromises)
+            .then(results => {
+                const allUploadsSuccessful = results.every(result => result.status === 'fulfilled');
+                if (!allUploadsSuccessful) {
+                    this.isSendingTweet = false;
+                    return Promise.reject('Uploads failed');
+                }
+    
+                if (videoFiles.length > 0) {
+                    const largestVideoSizeMB = Math.max(...videoFiles.map(file => file.size / (1024 * 1024)));
+                    const delayTime = Math.max(largestVideoSizeMB / 1.5, 20) * 1000;
+                    console.log('Pause before sending tweet: ' + delayTime + ' ms');
+                    return this.delay(delayTime);
+                }
+                return Promise.resolve();
+            })
+            .then(() => sendTweet({
+                contactId: this.recordId,
+                tweetText: this.tweetText,
+                mediaTwitterIdsJSON: JSON.stringify(mediaTwitterIds)
+            }))
+            .then(result => {
+                if (result.isSuccess) {
+                    const createAttachmentPromises = mediaDetails.map(detail => {
+                        return createAttachmentToTweet({
+                            tweetId: result.responseObj,
+                            mediaDetailsJSON: JSON.stringify(detail)
+                        });
                     });
-                });
-                
-                return Promise.all(createAttachmentPromises);
-            } else {
-                throw new Error(result.message);
-            }
-        })
-        .then(() => {
-            this.showToast('Success', 'Tweet posted successfully!', 'success');
-            this.isSendingTweet = false;
-            const msgMessage = {message:'Success'};
-            publish(this.messageContext, msgService, msgMessage);
-            this.dispatchEvent(new CloseActionScreenEvent());
-        })
-        .catch(error => {
-            this.showToast('Error', `An error occurred while posting the tweet: ${error.message}`, 'error');
-            this.isSendingTweet = false;
-        });
+    
+                    return Promise.all(createAttachmentPromises);
+                } else {
+                    console.log('message: ' + result.message);
+                    this.showToast('Error', result.message, 'error');
+                    throw new Error(result.message);
+                }
+            })
+            .then(() => {
+                this.showToast('Success', 'Tweet posted successfully!', 'success');
+                this.isSendingTweet = false;
+                const msgMessage = { message: 'tweet' };
+                publish(this.messageContext, msgService, msgMessage);
+                this.dispatchEvent(new CloseActionScreenEvent());
+            })
+            .catch(error => {
+                console.log(`An error occurred: ${error.message}`);
+                this.isSendingTweet = false;
+            });
     }
+    
 
     uploadMediaByType(file) {
         if (file.type.startsWith('image/')) {
@@ -194,7 +228,7 @@ export default class CreateTweet extends LightningElement {
             });
 
             if (!uploadImageResponse.isSuccess) {
-                throw new Error('Failed to upload image');
+                throw new Error(`An error occurred while loading the media file: ${uploadImageResponse.message}`);
             }
 
             uploadImageResponse.responseObj.mediaBase64 = base64;
@@ -213,11 +247,13 @@ export default class CreateTweet extends LightningElement {
 
             const initResponse = await initUploadVideo({ mediaType: file.type, totalBytes: file.size, contactId: this.recordId });
             if (!initResponse.isSuccess) {
-                throw new Error('Failed to initialize video upload');
+                throw new Error(`An error occurred while loading the media file: ${initResponse.message}`);
+
             }
 
             const mediaId = initResponse.responseObj.media_id_string;
-            const chunkSize = 2.5 * 1024 * 1024;
+            const chunkSize = 2.7 * 1024 * 1024;
+            const totalChunks = Math.ceil(file.size / chunkSize);
             let segmentIndex = 0;
 
             for (let start = 0; start < file.size; start += chunkSize) {
@@ -228,7 +264,7 @@ export default class CreateTweet extends LightningElement {
                 if (!appendResponse.isSuccess) {
                     throw new Error('Failed to append video chunk');
                 }
-
+                console.log(`Sent chunk ${segmentIndex + 1} of ${totalChunks}`);
                 segmentIndex++;
             }
 

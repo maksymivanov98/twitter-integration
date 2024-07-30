@@ -4,6 +4,7 @@
             <template if:true={isUserAuthorized}>
                 <lightning-button-menu alternative-text="Show menu" variant="border-filled" icon-name="utility:settings" menu-alignment="right">
                     <lightning-menu-item value="Twitter log in" label="Twitter log in" onclick={handleTwitterAuth}></lightning-menu-item>
+                    <lightning-menu-item value="Logout of Twitter" label="Logout of Twitter" onclick={handleLogoutOfTwitter}></lightning-menu-item>
                 </lightning-button-menu>
             </template>
         </div>

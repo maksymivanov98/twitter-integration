@@ -236,6 +236,57 @@ public class CreateTweetControllerTest {
     }
     
     @isTest
+    static void logoutOfTwitterTest() {
+        Contact contact = [SELECT Id FROM Contact LIMIT 1];
+        
+        Test.startTest();
+        AuraResponse response = CreateTweetController.logoutOfTwitter(contact.Id);
+        Test.stopTest();
+        
+        System.assertEquals(true, response.isSuccess);
+    }
+    
+        @isTest
+    static void testCreateAttachmentToTweet_Success() {
+        Tweet__c tweet = [SELECT Id FROM Tweet__c LIMIT 1];
+
+        String mediaDetailsJSON = JSON.serialize(new Map<String, Object>{
+            'name' => 'TestFile.jpg',
+            'mediaBase64' => EncodingUtil.base64Encode(Blob.valueOf('Test file content')),
+            'type' => 'image/jpeg'
+        });
+
+        Test.startTest();
+        AuraResponse response = CreateTweetController.createAttachmentToTweet(tweet.Id, mediaDetailsJSON);
+        Test.stopTest();
+
+        System.assert(response.isSuccess, 'Expected the response to be successful.');
+        System.assertEquals('Success', response.message, 'Expected the success message.');
+
+        Attachment attachment = [SELECT Id, Name, ParentId, Body, ContentType FROM Attachment WHERE Id = :(Id)response.responseObj];
+        System.assertEquals('TestFile.jpg', attachment.Name, 'Expected the attachment name to match.');
+        System.assertEquals(tweet.Id, attachment.ParentId, 'Expected the attachment ParentId to match the Tweet Id.');
+        System.assertEquals('image/jpeg', attachment.ContentType, 'Expected the attachment ContentType to match.');
+        System.assertEquals('Test file content', attachment.Body.toString(), 'Expected the attachment body to match the file content.');
+    }
+    
+    @isTest
+    static void testCreateAttachmentToTweet_Exception() {
+        String mediaDetailsJSON = JSON.serialize(new Map<String, Object>{
+            'name' => 'TestFile.jpg',
+            'mediaBase64' => 'InvalidBase64String',
+            'type' => 'image/jpeg'
+        });
+
+        Test.startTest();
+        AuraResponse response = CreateTweetController.createAttachmentToTweet(null, mediaDetailsJSON);
+        Test.stopTest();
+
+        List<Attachment> attachments = [SELECT Id FROM Attachment];
+        System.assertEquals(0, attachments.size());
+    }
+    
+    @isTest
     static void isAccessTokenValidTest_success() {
         Twitter_API_MultiMock multiMock = new  Twitter_API_MultiMock();
         multiMock.mockList.add(new Twitter_API_MultiMock.refreshAccessTokenSuccess());
@@ -257,6 +308,17 @@ public class CreateTweetControllerTest {
         update contact;
         Test.startTest();
         AuraResponse response = CreateTweetController.isAccessTokenValid(contact.Id);
+        Test.stopTest();
+        
+        System.assertEquals(true, response.isSuccess);
+    }
+    
+    @isTest
+    static void isAccessTokenOAuth1ValidTest() {
+        Contact contact = [SELECT Id FROM Contact LIMIT 1];
+
+        Test.startTest();
+        AuraResponse response = CreateTweetController.isAccessTokenOAuth1Valid(contact.Id);
         Test.stopTest();
         
         System.assertEquals(true, response.isSuccess);

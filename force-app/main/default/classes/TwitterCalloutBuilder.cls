@@ -135,6 +135,7 @@ public class TwitterCalloutBuilder {
                 callout.responseObj = ex.getCause() + ex.getTypeName() + ex.getMessage() + ex.getLineNumber();
             }
         }else{
+            callout.responseObj = callout.response.getBody();
             logger.error(callout.request, callout.response, 'TwitterCalloutBuilder', 'sendTweet');
         }
         System.debug(callout.request.getEndpoint());
@@ -160,6 +161,7 @@ public class TwitterCalloutBuilder {
                 callout.responseObj = ex.getCause() + ex.getTypeName() + ex.getMessage() + ex.getLineNumber();
             }
         }else{
+            callout.responseObj = callout.response.getBody();
             logger.error(callout.request, callout.response, 'TwitterCalloutBuilder', 'deleteTweet');
         }
         System.debug(callout.request.getEndpoint());
@@ -189,7 +191,6 @@ public class TwitterCalloutBuilder {
         
         String baseString = createBaseString(endPoint, 'POST', allParams);
         
-        
         oauthParams.put('oauth_signature', generateSignature(baseString, accessTokenSecret));
         
         callout.setHeader('Authorization', createAuthorizationHeader(oauthParams));
@@ -204,6 +205,7 @@ public class TwitterCalloutBuilder {
                 callout.responseObj = ex.getCause() + ex.getTypeName() + ex.getMessage() + ex.getLineNumber();
             }
         }else{
+            callout.responseObj = callout.response.getBody();
             logger.error(callout.request, callout.response, 'TwitterCalloutBuilder', 'uploadMedia');
         }
         System.debug(callout.request.getEndpoint());

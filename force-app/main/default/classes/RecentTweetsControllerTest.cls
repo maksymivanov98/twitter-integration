@@ -75,7 +75,7 @@ public class RecentTweetsControllerTest {
         List <Twitter_Log__c> twitterLogList = [SELECT Id FROM Twitter_Log__c];
         
         System.assertEquals(false, response.isSuccess);
-        System.assertEquals(1, twitterLogList.size());
+        System.assertEquals(2, twitterLogList.size());
     }
     
     

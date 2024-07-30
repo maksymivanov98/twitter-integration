@@ -7,6 +7,7 @@ import getTweets from '@salesforce/apex/RecentTweetsController.getTweets';
 import deleteTweet from '@salesforce/apex/RecentTweetsController.deleteTweet';
 import getTweetCount from '@salesforce/apex/RecentTweetsController.getTweetCount';
 import isAccessTokenValid from '@salesforce/apex/CreateTweetController.isAccessTokenValid';
+import logoutOfTwitter from '@salesforce/apex/CreateTweetController.logoutOfTwitter';
 import createTwitterAuthorizationURL from '@salesforce/apex/CreateTweetController.createTwitterAuthorizationURL';
 import noAccessImage from '@salesforce/resourceUrl/No_Access_Image';
 import emptyImage from '@salesforce/resourceUrl/Empty_Image';
@@ -36,8 +37,13 @@ export default class RecentTweets extends NavigationMixin(LightningElement) {
 
     connectedCallback() {
         this.checkAccessToken();
-        this.subscription = subscribe(this.messageContext, msgService, (msgMessage) => { this.refreshTweets();}, { scope: APPLICATION_SCOPE });
-
+        this.subscription = subscribe(this.messageContext, msgService, (msgMessage) => { 
+            if(msgMessage.message == 'tweet'){
+                this.refreshTweets();
+            } else if(msgMessage.message == 'authorization'){
+                this.checkAccessToken();
+            }
+        }, { scope: APPLICATION_SCOPE });
     }
 
     checkAccessToken() {
@@ -61,6 +67,21 @@ export default class RecentTweets extends NavigationMixin(LightningElement) {
                 this.statusMessage = error.body.message;
                 this.isUserAuthorized = false;
             });
+    }
+
+    handleLogoutOfTwitter(){
+        logoutOfTwitter({ contactId: this.recordId })
+        .then(result => {
+            if(result.isSuccess){
+                this.checkAccessToken();
+                this.showToast('Success', 'Twitter logout successful', 'success');
+            }else{
+                this.showToast('Error', 'An error occurred during Twitter logout: ' + result.message, 'error');
+            }
+        })
+        .catch(error => {
+            this.showToast('Error', 'An error occurred during Twitter logout: ' + error.message, 'error');
+        });
     }
 
     refreshTweets() {

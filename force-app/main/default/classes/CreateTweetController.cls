@@ -17,38 +17,59 @@ public class CreateTweetController {
     
     @AuraEnabled
     public static String createTwitterAuthorizationURL(String contactId){
-        String twitterAuthUrl = 'https://twitter.com/i/oauth2/authorize';
-        
-        Map<String, String> params = new Map<String, String>();
-        params.put('client_id', twitterSetting.Client_Id__c);
-        params.put('redirect_uri', twitterSetting.Redirect_Url__c);
-        params.put('response_type', 'code');
-        params.put('scope', 'users.read tweet.write tweet.read offline.access');
-        params.put('user.fields', '(profile_image_url,description)');
-        params.put('state', contactId);
-        params.put('code_challenge', twitterSetting.Code_Challenge__c);
-        params.put('code_challenge_method', 'plain');
-        
-        String redirectUrl = twitterAuthUrl + '?' + buildQueryString(params);
-        return redirectUrl;
+        Logger logger = Logger.getInstance();
+        try {
+            String twitterAuthUrl = 'https://twitter.com/i/oauth2/authorize';
+            
+            Map<String, String> params = new Map<String, String>();
+            params.put('client_id', twitterSetting.Client_Id__c);
+            params.put('redirect_uri', twitterSetting.Redirect_Url__c);
+            params.put('response_type', 'code');
+            params.put('scope', 'users.read tweet.write tweet.read offline.access');
+            params.put('user.fields', '(profile_image_url,description)');
+            params.put('state', contactId);
+            params.put('code_challenge', twitterSetting.Code_Challenge__c);
+            params.put('code_challenge_method', 'plain');
+            
+            String redirectUrl = twitterAuthUrl + '?' + buildQueryString(params);
+            return redirectUrl;
+        } catch(Exception ex) {
+            logger.error(null, null, 'CreateTweetController', 'createTwitterAuthorizationURL', ex.getMessage());
+            logger.publish();
+            return null;
+        }
     }
     
     @AuraEnabled
     public static String createTwitterAuthorizationURLOAuth1(String contactId){
-        TwitterCalloutService calloutService = new TwitterCalloutService();
-        String authorizationURL = calloutService.createTwitterAuthorizationURLOAuth1(contactId);
-        
-        Map<String, String> responseParams = parseResponseParams(authorizationURL);
-        String oauthToken = responseParams.get('oauth_token');
-        authorizationURL = twitterSetting.Base_API_URL__c + '/oauth/authorize?oauth_token=' + oauthToken;
-        return authorizationURL;
+        Logger logger = Logger.getInstance();
+        try {
+            TwitterCalloutService calloutService = new TwitterCalloutService();
+            String authorizationURL = calloutService.createTwitterAuthorizationURLOAuth1(contactId);
+            
+            Map<String, String> responseParams = parseResponseParams(authorizationURL);
+            String oauthToken = responseParams.get('oauth_token');
+            authorizationURL = twitterSetting.Base_API_URL__c + '/oauth/authorize?oauth_token=' + oauthToken;
+            return authorizationURL;
+        } catch(Exception ex) {
+            logger.error(null, null, 'CreateTweetController', 'createTwitterAuthorizationURLOAuth1', ex.getMessage());
+            logger.publish();
+            return null;
+        }
     }
     
     @AuraEnabled
     public static TwitterWrappers getAccessTokenOAuth1(String oauthToken, String oauthVerifier){
-        TwitterCalloutService calloutService = new TwitterCalloutService();
-        TwitterWrappers wrapper = calloutService.getAccessTokenOAuth1(oauthToken, oauthVerifier);
-        return wrapper;
+        Logger logger = Logger.getInstance();
+        try {
+            TwitterCalloutService calloutService = new TwitterCalloutService();
+            TwitterWrappers wrapper = calloutService.getAccessTokenOAuth1(oauthToken, oauthVerifier);
+            return wrapper;
+        } catch(Exception ex) {
+            logger.error(null, null, 'CreateTweetController', 'getAccessTokenOAuth1', ex.getMessage());
+            logger.publish();
+            return null;
+        }
     }
     
     private static Map<String, String> parseResponseParams(String response) {
@@ -130,7 +151,7 @@ public class CreateTweetController {
     }
     
     public static void updateContactTwitterData(String contactId, TwitterWrappers accessTokenWrapper, TwitterWrappers.GetUserAccountInformationResponse userAccountInformationWrapper){
-		List <Contact> contactList = ContactSelector.getSpecificContact(contactId);
+        List <Contact> contactList = ContactSelector.getSpecificContact(contactId);
         Contact contact;
         if(!contactList.isEmpty()){
             contact = contactList.get(0);
@@ -143,91 +164,137 @@ public class CreateTweetController {
         contact.Twitter_Access_Token_OAuth1_Refresh_Time__c = null;
         contact.Twitter_Handle__c = userAccountInformationWrapper.data.username;
         contact.Twitter_Name__c = userAccountInformationWrapper.data.name;
+        contact.Twitter_Id__c = userAccountInformationWrapper.data.id;
         update contact;
     }
     
     @AuraEnabled
     public static AuraResponse isAccessTokenValid(String contactId){
-        List <Contact> contactList = ContactSelector.getSpecificContact(contactId);
-        Contact contact;
-        if(!contactList.isEmpty()){
-            contact = contactList.get(0);
-        }else{
-            return new AuraResponse(false, 'There is no contact with this ID');
-        }
-        String accessToken = contact.Twitter_Access_Token__c;
-        DateTime accessTokenRefreshTime = contact.Twitter_Access_Token_Refresh_Time__c;
-        
-        TwitterWrappers.UserData userDataObject = new TwitterWrappers.UserData();
-        userDataObject.username = contact.Twitter_Handle__c;
-        userDataObject.name = contact.Twitter_Name__c;
-        TwitterWrappers.GetUserAccountInformationResponse response = new TwitterWrappers.GetUserAccountInformationResponse();
-        response.data = userDataObject;
-        
-        if(!String.isBlank(accessToken) && accessTokenRefreshTime != null){
-            Long timeDifferenceMillis = DateTime.now().getTime() - accessTokenRefreshTime.getTime();
-            Long timeDifferenceHours = timeDifferenceMillis / (1000 * 60 * 60);
-            
-            if (timeDifferenceHours < 2) {
-                return new AuraResponse(true, response.data, 'Authorization is active');
-            } else {
-                if(!String.isBlank(contact.Twitter_Refresh_Token__c)){
-                    TwitterWrappers refreshTokenWrapper = refreshAccessToken(contact.Twitter_Refresh_Token__c);
-                    if(!String.isBlank(refreshTokenWrapper.access_token)){
-                        contact.Twitter_Access_Token__c = refreshTokenWrapper.access_token;
-                        contact.Twitter_Refresh_Token__c = refreshTokenWrapper.refresh_token;
-                        contact.Twitter_Access_Token_Refresh_Time__c = DateTime.now();
-                        update contact;
-                        return new AuraResponse(true, response.data, 'Authorization is active');
-                    }else{
-                        return new AuraResponse(false, 'Need re-authorization to Twitter');
-                    }
-                }else{
-                    return new AuraResponse(false,'Need re-authorization to Twitter'); 
-                }
+        Logger logger = Logger.getInstance();
+        try {
+            List <Contact> contactList = ContactSelector.getSpecificContact(contactId);
+            Contact contact;
+            if(!contactList.isEmpty()){
+                contact = contactList.get(0);
+            }else{
+                return new AuraResponse(false, 'There is no contact with this ID');
             }
-        }else{
-            return new AuraResponse(false, 'Need authorization to Twitter');
+            String accessToken = contact.Twitter_Access_Token__c;
+            DateTime accessTokenRefreshTime = contact.Twitter_Access_Token_Refresh_Time__c;
+            
+            TwitterWrappers.UserData userDataObject = new TwitterWrappers.UserData();
+            userDataObject.username = contact.Twitter_Handle__c;
+            userDataObject.name = contact.Twitter_Name__c;
+            TwitterWrappers.GetUserAccountInformationResponse response = new TwitterWrappers.GetUserAccountInformationResponse();
+            response.data = userDataObject;
+            
+            if(!String.isBlank(accessToken) && accessTokenRefreshTime != null){
+                Long timeDifferenceMillis = DateTime.now().getTime() - accessTokenRefreshTime.getTime();
+                Long timeDifferenceHours = timeDifferenceMillis / (1000 * 60 * 60);
+                
+                if (timeDifferenceHours < 2) {
+                    return new AuraResponse(true, response.data, 'Authorization is active');
+                } else {
+                    if(!String.isBlank(contact.Twitter_Refresh_Token__c)){
+                        TwitterWrappers refreshTokenWrapper = refreshAccessToken(contact.Twitter_Refresh_Token__c);
+                        if(!String.isBlank(refreshTokenWrapper.access_token)){
+                            contact.Twitter_Access_Token__c = refreshTokenWrapper.access_token;
+                            contact.Twitter_Refresh_Token__c = refreshTokenWrapper.refresh_token;
+                            contact.Twitter_Access_Token_Refresh_Time__c = DateTime.now();
+                            update contact;
+                            return new AuraResponse(true, response.data, 'Authorization is active');
+                        }else{
+                            return new AuraResponse(false, 'Need re-authorization to Twitter');
+                        }
+                    }else{
+                        return new AuraResponse(false,'Need re-authorization to Twitter'); 
+                    }
+                }
+            }else{
+                return new AuraResponse(false, 'Need authorization to Twitter');
+            }
+        } catch(Exception ex) {
+            logger.error(null, null, 'CreateTweetController', 'isAccessTokenValid', ex.getMessage());
+            logger.publish();
+            return new AuraResponse(false, null, ex.getMessage());
+        }
+    }
+    
+    @AuraEnabled
+    public static AuraResponse logoutOfTwitter(String contactId){
+        Logger logger = Logger.getInstance();
+        try {
+            List <Contact> contactList = ContactSelector.getSpecificContact(contactId);
+            Contact contact;
+            if(!contactList.isEmpty()){
+                contact = contactList.get(0);
+            }else{
+                return new AuraResponse(false, 'There is no contact with this ID');
+            }
+            contact.Twitter_Access_Token__c = null;
+            contact.Twitter_Refresh_Token__c = null;
+            contact.Twitter_Access_Token_Refresh_Time__c = null;
+            contact.Twitter_Access_Token_OAuth1__c = null;
+            contact.Twitter_Refresh_Token_OAuth1__c = null;
+            contact.Twitter_Access_Token_OAuth1_Refresh_Time__c = null;
+            contact.Twitter_Handle__c = null;
+            contact.Twitter_Name__c = null;
+            contact.Twitter_Id__c = null;
+            contact.Last_Tweet_Post_Date__c = null;
+            update contact;
+            return new AuraResponse(true, 'Logout is success');
+        } catch(Exception ex) {
+            logger.error(null, null, 'CreateTweetController', 'logoutOfTwitter', ex.getMessage());
+            logger.publish();
+            return new AuraResponse(false, null, ex.getMessage());
         }
     }
     
     @AuraEnabled
     public static AuraResponse isAccessTokenOAuth1Valid(String contactId){
-        List <Contact> contactList = ContactSelector.getSpecificContact(contactId);
-        Contact contact;
-        if(!contactList.isEmpty()){
-            contact = contactList.get(0);
-        }else{
-            return new AuraResponse(false, 'There is no contact with this ID');
-        }
-        String accessToken = contact.Twitter_Access_Token_Oauth1__c;
-        String accessTokenSecret = contact.Twitter_Refresh_Token_Oauth1__c ;
-        DateTime accessTokenRefreshTime = contact.Twitter_Access_Token_Oauth1_Refresh_Time__c;
-        if(!String.isBlank(accessToken) && !String.isBlank(accessTokenSecret) && accessTokenRefreshTime != null){
-            Long timeDifferenceMillis = DateTime.now().getTime() - accessTokenRefreshTime.getTime();
-            Long timeDifferenceHours = timeDifferenceMillis / (1000 * 60 * 60);
-            if (timeDifferenceHours < 24) {
-                return new AuraResponse(true, 'Authorization is active');
-            } else {
+        Logger logger = Logger.getInstance();
+        try {
+            List <Contact> contactList = ContactSelector.getSpecificContact(contactId);
+            Contact contact;
+            if(!contactList.isEmpty()){
+                contact = contactList.get(0);
+            }else{
+                return new AuraResponse(false, 'There is no contact with this ID');
+            }
+            String accessToken = contact.Twitter_Access_Token_Oauth1__c;
+            String accessTokenSecret = contact.Twitter_Refresh_Token_Oauth1__c ;
+            DateTime accessTokenRefreshTime = contact.Twitter_Access_Token_Oauth1_Refresh_Time__c;
+            if(!String.isBlank(accessToken) && !String.isBlank(accessTokenSecret) && accessTokenRefreshTime != null){
+                Long timeDifferenceMillis = DateTime.now().getTime() - accessTokenRefreshTime.getTime();
+                Long timeDifferenceHours = timeDifferenceMillis / (1000 * 60 * 60);
+                if (timeDifferenceHours < 24) {
+                    return new AuraResponse(true, 'Authorization is active');
+                } else {
+                    return new AuraResponse(false, null, 'Need authorization to Twitter');
+                }
+            }else{
                 return new AuraResponse(false, null, 'Need authorization to Twitter');
             }
-        }else{
-            return new AuraResponse(false, null, 'Need authorization to Twitter');
+        } catch(Exception ex) {
+            logger.error(null, null, 'CreateTweetController', 'isAccessTokenOAuth1Valid', ex.getMessage());
+            logger.publish();
+            return new AuraResponse(false, null, ex.getMessage());
         }
     }
     
     @AuraEnabled
     public static AuraResponse sendTweet(String contactId, String tweetText, String mediaTwitterIdsJSON) {
         Logger logger = Logger.getInstance();
-        List <Contact> contactList = ContactSelector.getSpecificContact(contactId);
-        Contact contact;
-        if (!contactList.isEmpty()) {
-            contact = contactList.get(0);
-        } else {
-            return new AuraResponse(false, 'There is no contact with this ID');
-        }
-        String accessToken = contact.Twitter_Access_Token__c;
         try{
+            List <Contact> contactList = ContactSelector.getSpecificContact(contactId);
+            Contact contact;
+            if (!contactList.isEmpty()) {
+                contact = contactList.get(0);
+            } else {
+                return new AuraResponse(false, 'There is no contact with this ID');
+            }
+            String accessToken = contact.Twitter_Access_Token__c;
+            
             List<String> mediaTwitterIds = (List<String>) JSON.deserialize(mediaTwitterIdsJSON, List<String>.class);
             TwitterCalloutService calloutService = new TwitterCalloutService();
             TwitterWrappers.SendTweetResponse sendTweetWrapper = calloutService.sendTweet(accessToken, tweetText, mediaTwitterIds);
@@ -242,6 +309,8 @@ public class CreateTweetController {
                 update contact;
                 return new AuraResponse(true, tweet.id, 'Success');
             } else {
+                System.debug('Test 1');
+                System.debug(String.valueOf(sendTweetWrapper.errorResponseObj));
                 return new AuraResponse(false, null, String.valueOf(sendTweetWrapper.errorResponseObj));
             }
         }catch(Exception ex){
@@ -272,40 +341,54 @@ public class CreateTweetController {
     
     @AuraEnabled
     public static AuraResponse uploadMedia(String mediaBase64, String mediaName, String mediaType, String contactId) {
-        List <Contact> contactList = ContactSelector.getSpecificContact(contactId);
-        Contact contact;
-        if(!contactList.isEmpty()){
-            contact = contactList.get(0);
-        }else{
-            return new AuraResponse(false, 'There is no contact with this ID');
-        }
-        
-        TwitterCalloutService calloutService = new TwitterCalloutService();
-        
-        TwitterWrappers.UploadMediaResponse uploadMediaWrapper = calloutService.uploadMedia(mediaBase64, contact.Twitter_Access_Token_OAuth1__c, contact.Twitter_Refresh_Token_OAuth1__c, contact.Twitter_Id__c);
-        if(uploadMediaWrapper.isSuccess){
-            return new AuraResponse(true, uploadMediaWrapper, 'Success');
-        }else{
-            return new AuraResponse(false, null, String.valueOf(uploadMediaWrapper.errorResponseObj));
+        Logger logger = Logger.getInstance();
+        try{
+            List <Contact> contactList = ContactSelector.getSpecificContact(contactId);
+            Contact contact;
+            if(!contactList.isEmpty()){
+                contact = contactList.get(0);
+            }else{
+                return new AuraResponse(false, 'There is no contact with this ID');
+            }
+            TwitterCalloutService calloutService = new TwitterCalloutService();
+            
+            TwitterWrappers.UploadMediaResponse uploadMediaWrapper = calloutService.uploadMedia(mediaBase64, contact.Twitter_Access_Token_OAuth1__c, contact.Twitter_Refresh_Token_OAuth1__c, contact.Twitter_Id__c);
+            if(uploadMediaWrapper.isSuccess){
+                return new AuraResponse(true, uploadMediaWrapper, 'Success');
+            }else{
+                return new AuraResponse(false, null, String.valueOf(uploadMediaWrapper.errorResponseObj));
+            }
+        }catch(Exception ex){
+            System.debug('Error from controller: ' + ex.getMessage());
+            logger.error(null, null, 'CreateTweetController', 'uploadMedia', ex.getMessage());
+            logger.publish();
+            return new AuraResponse(false, null, ex.getMessage());
         }
     }
     
     @AuraEnabled
     public static AuraResponse initUploadVideo(String mediaType, Integer totalBytes, String contactId) {
-        List <Contact> contactList = ContactSelector.getSpecificContact(contactId);
-        Contact contact;
-        if(!contactList.isEmpty()){
-            contact = contactList.get(0);
-        }else{
-            return new AuraResponse(false, 'There is no contact with this ID');
-        }
-        TwitterCalloutService calloutService = new TwitterCalloutService();
-        
-        TwitterWrappers.UploadMediaResponse uploadMediaWrapper = calloutService.initUploadVideo(mediaType, totalBytes, contact.Twitter_Access_Token_OAuth1__c, contact.Twitter_Refresh_Token_OAuth1__c);
-        if(uploadMediaWrapper.isSuccess){
-            return new AuraResponse(true, uploadMediaWrapper, 'Success');
-        }else{
-            return new AuraResponse(false, null, String.valueOf(uploadMediaWrapper.errorResponseObj));
+        Logger logger = Logger.getInstance();
+        try {
+            List <Contact> contactList = ContactSelector.getSpecificContact(contactId);
+            Contact contact;
+            if(!contactList.isEmpty()){
+                contact = contactList.get(0);
+            }else{
+                return new AuraResponse(false, 'There is no contact with this ID');
+            }
+            TwitterCalloutService calloutService = new TwitterCalloutService();
+            
+            TwitterWrappers.UploadMediaResponse uploadMediaWrapper = calloutService.initUploadVideo(mediaType, totalBytes, contact.Twitter_Access_Token_OAuth1__c, contact.Twitter_Refresh_Token_OAuth1__c);
+            if(uploadMediaWrapper.isSuccess){
+                return new AuraResponse(true, uploadMediaWrapper, 'Success');
+            }else{
+                return new AuraResponse(false, null, String.valueOf(uploadMediaWrapper.errorResponseObj));
+            }
+        } catch(Exception ex) {
+            logger.error(null, null, 'CreateTweetController', 'initUploadVideo', ex.getMessage());
+            logger.publish();
+            return new AuraResponse(false, null, ex.getMessage());
         }
     }
     
@@ -331,20 +414,28 @@ public class CreateTweetController {
     
     @AuraEnabled
     public static AuraResponse finalizeUploadVideo(String mediaId, String contactId) {
-        List <Contact> contactList = ContactSelector.getSpecificContact(contactId);
-        Contact contact;
-        if(!contactList.isEmpty()){
-            contact = contactList.get(0);
-        }else{
-            return new AuraResponse(false, 'There is no contact with this ID');
-        }
-        TwitterCalloutService calloutService = new TwitterCalloutService();
-        
-        TwitterWrappers.UploadMediaResponse uploadMediaWrapper = calloutService.finalizeUploadVideo(mediaId, contact.Twitter_Access_Token_OAuth1__c, contact.Twitter_Refresh_Token_OAuth1__c);
-        if(uploadMediaWrapper.isSuccess){
-            return new AuraResponse(true, uploadMediaWrapper, 'Success');
-        }else{
-            return new AuraResponse(false, null, String.valueOf(uploadMediaWrapper.errorResponseObj));
+        Logger logger = Logger.getInstance();
+        try {
+            List <Contact> contactList = ContactSelector.getSpecificContact(contactId);
+            Contact contact;
+            if(!contactList.isEmpty()){
+                contact = contactList.get(0);
+            }else{
+                return new AuraResponse(false, 'There is no contact with this ID');
+            }
+            
+            TwitterCalloutService calloutService = new TwitterCalloutService();
+            
+            TwitterWrappers.UploadMediaResponse uploadMediaWrapper = calloutService.finalizeUploadVideo(mediaId, contact.Twitter_Access_Token_OAuth1__c, contact.Twitter_Refresh_Token_OAuth1__c);
+            if(uploadMediaWrapper.isSuccess){
+                return new AuraResponse(true, uploadMediaWrapper, 'Success');
+            }else{
+                return new AuraResponse(false, null, String.valueOf(uploadMediaWrapper.errorResponseObj));
+            }
+        } catch(Exception ex) {
+            logger.error(null, null, 'CreateTweetController', 'finalizeUploadVideo', ex.getMessage());
+            logger.publish();
+            return new AuraResponse(false, null, ex.getMessage());
         }
     }
     

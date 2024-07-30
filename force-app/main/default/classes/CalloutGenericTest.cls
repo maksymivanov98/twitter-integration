@@ -43,6 +43,28 @@ private class CalloutGenericTest {
         System.assertEquals('Internal Server Error', response.getStatus());
         System.assertEquals('{"error": "Server error"}', response.getResponseBody());
     }
+    
+    @isTest
+    static void calloutWithoutParamTest_success() {
+        CalloutGeneric callout = new CalloutGeneric('RecordTypeName');
+
+        HttpResponse mockResponse = new HttpResponse();
+        mockResponse.setStatusCode(200);
+        mockResponse.setStatus('OK');
+        mockResponse.setBody('{"message": "Success"}');
+
+        callout.setEndpoint('https://mockservice.com/api');
+        callout.setParam('key', 'value');
+
+        Test.setMock(HttpCalloutMock.class, new MockHttpResponseGenerator(mockResponse));
+
+        CalloutGeneric response = callout.send();
+
+        System.assertEquals(200, response.getStatusCode());
+        System.assertEquals('OK', response.getStatus());
+        System.assertEquals('{"message": "Success"}', response.getResponseBody());
+        System.assertEquals(null, response.getError());
+    }
 
     private class MockHttpResponseGenerator implements HttpCalloutMock {
         HttpResponse mockResponse;
